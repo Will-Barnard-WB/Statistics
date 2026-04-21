@@ -1,0 +1,240 @@
+---
+title: "MA22015 2026 - Coursework"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+  pdf_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+<!-- Anything written like this is an instruction about formatting the coursework. You should remove these before submission so they don't get included in the word count -->
+
+```{=html}
+<!-- Do not include your name in the output. Moodle will associate
+your name with your upload. It does not matter what name you give to this file. Do not remove the table of contents (toc) -->
+```
+
+```{=html}
+<!-- You may add cosmetic options only to this chunk. All other R chunks should be 
+visible in your output -->
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,comment=NA)
+```
+
+<!-- Do not change the section titles for the questions. Keep an empty line above and below each section title to ensure they render correctly. -->
+
+## Generative AI statement
+
+<!-- Edit this R chunk -->
+
+```{r}
+# Type B: Generative AI is permitted as an assistive tool within the assessment.
+# Describe how you used as AI here
+# Write this as a code comment as I have done here so that this will not be included
+# in the word count. Do not use code comments elsewhere as a means to include 
+# additional content.
+```
+
+## Setup
+
+<!-- Load in the data and any R packages you use here. -->
+
+library(ggplot2)
+
+<!-- The R statement reading in your data should work for data placed in the same folder or directory as your coursework file. This is necessary so that I can run your R markdown file myself without editing. -->
+
+```{r}
+polpres <- read.csv("polpres.csv")
+View(polpres)
+```
+
+The wordcount:
+
+<!-- Put the name of your Rmarkdown file within the quotes -->
+
+```{r}
+library(rmdwc)
+rmdcount("cw26.Rmd")$words
+```
+
+## 1. Additional Voters
+
+```{r}
+
+candidates <- c("Bartoszewicz","Biejat","Braun","Hołownia","Jakubiak",
+"Maciak","Mentzen","Nawrocki","Senyszyn","Stanowski",
+"Trzaskowski","Woch","Zandberg")
+
+polpres$round1 <- rowSums(polpres[, candidates])
+polpres$round2 <- polpres$N2 + polpres$T2 + polpres$spoilt
+polpres$additional <- polpres$round2 - polpres$round1
+
+pp <- polpres[polpres$province != "", ]
+
+lmod <- lm(log(additional) ~ log(round1), data = pp)
+
+stud <- rstudent(lmod) 
+pp$stud <- stud
+
+n <- nrow(pp) 
+threshold <- qt(0.05 / (2 * n), df = n - 2 - 1)
+pp$outlier <- abs(pp$stud) > abs(threshold)
+
+ggplot(pp, aes(log(round1), log(additional))) + geom_point() +
+geom_smooth(method = "lm") + geom_text(data = pp[pp$outlier, ],
+aes(label = county), hjust = -0.1, size = 3) + xlab("Log first round total votes") + ylab("Log additional voters in second round")
+
+#do not include these - just for doing the coursework? 
+names(stud) <- pp$county 
+outliers <- stud[abs(stud) > abs(threshold)] 
+outliers
+par(mfrow = c(2, 2)) 
+plot(lmod) 
+# do not include these - just for doing the coureswork?
+
+```
+
+The counties 'zagranica' and 'statki' were excluded from this analysis
+as they are not polish counties, and instead represent overseas
+citizens. The scatter plot shows a strong positive linear relationship
+between log(additonal) and log(round1). I fitted a linear model of these
+two variables to identify counties with unusual changes relative to
+their size. A log transformation was used after the original linear
+model's diagonistic plots showed heteroscedasticity, with larger
+counties having much higher variation. After applying this
+transformation, the diagonistics were checked and showed no major
+concerns. To identify outliers, studentized residuals were tested
+against a Boferroni-corrected threshold, which produced three outliers:
+gryficki (4.45), kołobrzeski (4.43), and kamieński (4.09). All 3 of
+these counties are found in the zachodniopomorskie province as well as
+being coastal towns, suggesting inflated voter counts reflect
+holidaymakers voting there rather than at home.
+
+## 2. Exit Poll
+
+```{r}
+p <- sum(polpres$T2) / (sum(polpres$T2) + sum(polpres$N2)) 
+prob <- 1 - pbinom(500, 1000, p) 
+print(p) 
+print(prob)
+```
+
+Trzaskowski's national vote share (excluding spoilt ballots) is
+`r round(p, 3)`. If we suppose 1000 randomly selected voters were
+surveyed, the probability that a majority favour Trzaskowski is
+`r round(prob, 3).` This figure seems likely and unsurprising given his
+true share of just under 50%.
+
+## 3. Turnout
+
+```{r}
+pp <- polpres[!is.na(polpres$province) & polpres$province != "", ]
+pp$turnout <- (pp$N2 + pp$T2 + pp$spoilt) / pp$eligible2 * 100
+
+lmod3 <- lm(turnout ~ province, data = pp)
+anova(lmod3)
+
+ggplot(pp, aes(x = reorder(province, turnout, FUN = median), y = turnout)) +
+  geom_boxplot() +
+  coord_flip() +
+  xlab("Province") +
+  ylab("Turnout (%)")
+  
+prov_means <- aggregate(turnout ~ province, data = pp, FUN = mean)
+prov_means[order(prov_means$turnout), ]
+
+# do not include these - just doing for couresework?
+par(mfrow=c(2,2)); plot(lmod3)
+# do not include these - just doing for the coureswork?
+```
+
+Zagranica and statki were excluded as the question specifies only those
+voting in Poland. I computed round 2 turnout with (N2 + T2 + spoilt) /
+eligible2 x 100 per county. Diagnostics plots were checked and showed no
+concerns and validated one-way ANOVA assumptions. The ANOVA showed
+significant differences between provinces (F = 14.38, p \< 0.001).
+Opolskie (`r round(...)`%) and warmińsko-mazurskie (`r round(...)`%) had
+exceptionally low turnout, while there were no clear exceptionally high
+turnout provinces. This was supported by the sorted boxplot, which shows
+clear separation at the lower end.
+
+## 4. Spoilt Ballots
+
+```{r}
+pp <- polpres
+pp <- pp[pp$county != "statki", ]
+pp$round1 <- rowSums(pp[, candidates])
+pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
+pp$spoilt_rate <- pp$spoilt / pp$round2
+pp$T_share <- pp$Trzaskowski / pp$round1
+lmod4 <- lm(spoilt_rate ~ T_share, data = pp)
+summary(lmod4)
+
+par(mfrow = c(2, 2))
+plot(lmod4)
+```
+
+After checking initial diagnostic plots, statki was excluded due to its
+clear outlier behavior. Spoilt rate was modelled against Trzaskowski's
+first-round vote share. From the model summary we see a significant
+positive coefficient, meaning that counties with stronger first-round
+Trzaskowski support had higher spoilt rates. This suggests spoilt ballot
+voters were more likely to be potential Trzaskowski supporters.
+
+## 5. USA-style election
+
+<!-- Put your answer here -->
+
+pp \<- polpres[!is.na(polpres$province) & polpres$province != "", ]
+
+# Province-level totals
+
+prov \<- aggregate(cbind(T2, N2, eligible2) \~ province, data = pp, FUN
+= sum) prov$winner <- ifelse(prov$T2 \>
+prov$N2, "Trzaskowski", "Nawrocki")
+prov$ec_votes \<- prov$eligible2
+prov$margin \<- abs(prov$T2 - prov$N2) prov
+
+# Electoral College totals
+
+ec_T \<- sum(prov$ec_votes[prov$winner == "Trzaskowski"]) ec_N \<-
+sum(prov$ec_votes[prov$winner == "Nawrocki"]) ec_T ec_N
+
+# EC winner
+
+ec_winner \<- ifelse(ec_T \> ec_N, "Trzaskowski", "Nawrocki") ec_winner
+
+# Minimum flips to change EC outcome
+
+# Take provinces won by EC winner, sort by margin
+
+ec_winner_provs \<- prov[prov$winner == ec_winner, ]
+ec_winner_provs <- ec_winner_provs[order(ec_winner_provs$margin), ]
+
+# Greedily flip smallest margins until EC outcome reverses
+
+ec_lead \<- abs(ec_T - ec_N) flips_needed \<- 0 votes_to_flip \<- 0
+cumulative_ec \<- 0
+
+for (i in 1:nrow(ec_winner_provs)) { \# depends on the order of where
+you start???? votes_to_flip \<- votes_to_flip +
+ceiling(ec_winner_provs$margin[i] / 2) + 1
+  cumulative_ec <- cumulative_ec + ec_winner_provs$ec_votes[i] if
+(cumulative_ec \* 2 \> ec_lead) { break } } votes_to_flip
+
+# Minimum flips under actual Polish system (national popular vote)
+
+national_T \<- sum(pp$T2)
+national_N <- sum(pp$N2) national_margin \<- abs(national_T -
+national_N) national_flips \<- ceiling(national_margin / 2) + 1
+national_flips
+
+## 6. Transfer of first round votes
+
+<!-- Put your answer here -->
