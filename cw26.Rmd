@@ -189,52 +189,63 @@ voters were more likely to be potential Trzaskowski supporters.
 
 ## 5. USA-style election
 
-<!-- Put your answer here -->
+```{r}
+pp <- polpres[!is.na(polpres$province) & polpres$province != "", ]
 
-pp \<- polpres[!is.na(polpres$province) & polpres$province != "", ]
-
-# Province-level totals
-
-prov \<- aggregate(cbind(T2, N2, eligible2) \~ province, data = pp, FUN
-= sum) prov$winner <- ifelse(prov$T2 \>
+prov <- aggregate(cbind(T2, N2, eligible2) ~ province, data = pp, FUN= sum) 
+prov$winner <- ifelse(prov$T2 >
 prov$N2, "Trzaskowski", "Nawrocki")
-prov$ec_votes \<- prov$eligible2
-prov$margin \<- abs(prov$T2 - prov$N2) prov
+prov$ec_votes <- prov$eligible2
+prov$margin <- abs(prov$T2 - prov$N2) 
 
-# Electoral College totals
+ec_T <- sum(prov$ec_votes[prov$winner == "Trzaskowski"]) 
+ec_N <- sum(prov$ec_votes[prov$winner == "Nawrocki"]) 
+ec_winner <- ifelse(ec_T > ec_N, "Trzaskowski", "Nawrocki") 
 
-ec_T \<- sum(prov$ec_votes[prov$winner == "Trzaskowski"]) ec_N \<-
-sum(prov$ec_votes[prov$winner == "Nawrocki"]) ec_T ec_N
-
-# EC winner
-
-ec_winner \<- ifelse(ec_T \> ec_N, "Trzaskowski", "Nawrocki") ec_winner
-
-# Minimum flips to change EC outcome
-
-# Take provinces won by EC winner, sort by margin
-
-ec_winner_provs \<- prov[prov$winner == ec_winner, ]
+ec_winner_provs <- prov[prov$winner == ec_winner, ]
 ec_winner_provs <- ec_winner_provs[order(ec_winner_provs$margin), ]
 
-# Greedily flip smallest margins until EC outcome reverses
+ec_lead <- abs(ec_T - ec_N) 
+best <- Inf
+best_combo <- NULL
+for (k in 1:nrow(ec_winner_provs)) {
+  combos <- combn(1:nrow(ec_winner_provs), k, simplify = FALSE)
+  for (combo in combos) {
+    ec_swing <- sum(ec_winner_provs$ec_votes[combo]) * 2
+    if (ec_swing > ec_lead) {
+      cost <- sum(floor(ec_winner_provs$margin[combo] / 2) + 1)
+      if (cost < best) {
+        best <- cost
+        best_combo <- combo
+      }
+    }
+  }
+}
 
-ec_lead \<- abs(ec_T - ec_N) flips_needed \<- 0 votes_to_flip \<- 0
-cumulative_ec \<- 0
+national_T <- sum(polpres$T2)
+national_N <- sum(polpres$N2) 
+national_margin <- abs(national_T - national_N) 
+national_flips <- floor(national_margin / 2) + 1
+```
 
-for (i in 1:nrow(ec_winner_provs)) { \# depends on the order of where
-you start???? votes_to_flip \<- votes_to_flip +
-ceiling(ec_winner_provs$margin[i] / 2) + 1
-  cumulative_ec <- cumulative_ec + ec_winner_provs$ec_votes[i] if
-(cumulative_ec \* 2 \> ec_lead) { break } } votes_to_flip
-
-# Minimum flips under actual Polish system (national popular vote)
-
-national_T \<- sum(pp$T2)
-national_N <- sum(pp$N2) national_margin \<- abs(national_T -
-national_N) national_flips \<- ceiling(national_margin / 2) + 1
-national_flips
+Trzaskowski would win the election under EC rules (19.2M v 9.4M
+electoral votes), despite losing to Nawrocki under the actual Polish
+voting system. However, only 20,333 voter changes would be needed to
+flip the electoral college outcome, compared to 184,796 changes for the
+actual Polish result. This shows that the electoral system is much more
+sensitive to small vote changes, with almost 100 times fewer switches
+needed when comparing the two systems.
 
 ## 6. Transfer of first round votes
 
-<!-- Put your answer here -->
+```{pp <- polpres}
+pp$round1 <- rowSums(pp[, candidates])
+pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
+pp$others <- pp$Bartoszewicz + pp$Jakubiak + pp$Maciak + 
+             pp$Senyszyn + pp$Stanowski + pp$Woch
+pp$latejoins <- pp$round2 - pp$round1
+
+lmod6 <- lm(T2 ~ Biejat + Zandberg + Hołownia + Braun + Mentzen + 
+             Trzaskowski + Nawrocki + others + latejoins - 1, data = pp)
+summary(lmod6)
+```
