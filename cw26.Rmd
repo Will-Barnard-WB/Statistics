@@ -45,11 +45,10 @@ knitr::opts_chunk$set(echo = TRUE,comment=NA)
 
 <!-- Load in the data and any R packages you use here. -->
 
-library(ggplot2)
-
 <!-- The R statement reading in your data should work for data placed in the same folder or directory as your coursework file. This is necessary so that I can run your R markdown file myself without editing. -->
 
 ```{r}
+library(ggplot2)
 polpres <- read.csv("polpres.csv")
 View(polpres)
 ```
@@ -76,6 +75,12 @@ polpres$round2 <- polpres$N2 + polpres$T2 + polpres$spoilt
 polpres$additional <- polpres$round2 - polpres$round1
 
 pp <- polpres[polpres$province != "", ]
+
+lmod_before <- lm(additional ~ round1, data = pp)
+
+par(mfrow = c(2, 2)) 
+plot(lmod_before) 
+
 
 lmod <- lm(log(additional) ~ log(round1), data = pp)
 
