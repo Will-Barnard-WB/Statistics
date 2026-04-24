@@ -50,7 +50,6 @@ knitr::opts_chunk$set(echo = TRUE,comment=NA)
 ```{r}
 library(ggplot2)
 polpres <- read.csv("polpres.csv")
-View(polpres)
 ```
 
 The wordcount:
@@ -75,114 +74,171 @@ polpres$round2 <- polpres$N2 + polpres$T2 + polpres$spoilt
 polpres$additional <- polpres$round2 - polpres$round1
 
 pp <- polpres[polpres$province != "", ]
+```
 
+From initial dataset analysis, the two counties 'zagranica' and 'statki'
+have no listed province. From exploring this further, these both
+translate to 'foreign countries' and 'ships'. In light of this, I have
+excluded these two from the dataset for this question as the focus on
+counties implies this is a reasonable adjustment to make. Additional
+voters were calculated by taking the difference of voters across all 13
+candidates, and the number of spoilt, 'Nawrocki' and 'Trzaskowski' votes
+from round 2.
+
+```{r}
 lmod_before <- lm(additional ~ round1, data = pp)
-
 par(mfrow = c(2, 2)) 
-plot(lmod_before) 
+plot(lmod_before)
+```
 
+Initially, a linear model of 'round1' against 'additional' was fitted,
+which found round1 to be a statistically significant predictor variable
+for additional voters. However, after checking diagnostics plots it
+became obvious quickly that a linear model was not valid here. There are
+clear signs of heteroscedasticity, with larger counties having much
+higher variation. Additionally, the residuals v leverage plot reveals
+that observation 179 has an extremely high leverage which suggests it
+disproportionately influences the model fit.
 
-lmod <- lm(log(additional) ~ log(round1), data = pp)
+```{r}
+lmod_after <- lm(log(additional) ~ log(round1), data = pp)
+summary(lmod_after)
+```
 
-stud <- rstudent(lmod) 
+A log transformation to both 'additional' and 'round1' voters before
+fitting a linear model, as it gives more interpretable coefficients when
+compared to sqrt. Inspecting this models diagnostics plots, no major
+concerns were seen and thus a linear model appears to be a good fit. The
+model achieves an R\^2 of 0.8276, with log(round1) a statistically
+significant predictor with an estimated coefficient of 0.89; implying
+that additional voters scales approximately proportionally with county
+size.
+
+```{r}
+stud <- rstudent(lmod_after) 
 pp$stud <- stud
 
 n <- nrow(pp) 
-threshold <- qt(0.05 / (2 * n), df = n - 2 - 1)
+threshold <- qt(0.05 / (2 * n), df = n - 1 - 1)
 pp$outlier <- abs(pp$stud) > abs(threshold)
 
 ggplot(pp, aes(log(round1), log(additional))) + geom_point() +
-geom_smooth(method = "lm") + geom_text(data = pp[pp$outlier, ],
+geom_smooth() + geom_text(data = pp[pp$outlier, ], # method = lm in here???
 aes(label = county), hjust = -0.1, size = 3) + xlab("Log first round total votes") + ylab("Log additional voters in second round")
-
-#do not include these - just for doing the coursework? 
-names(stud) <- pp$county 
-outliers <- stud[abs(stud) > abs(threshold)] 
-outliers
-par(mfrow = c(2, 2)) 
-plot(lmod) 
-# do not include these - just for doing the coureswork?
-
 ```
 
-The counties 'zagranica' and 'statki' were excluded from this analysis
-as they are not polish counties, and instead represent overseas
-citizens. The scatter plot shows a strong positive linear relationship
-between log(additonal) and log(round1). I fitted a linear model of these
-two variables to identify counties with unusual changes relative to
-their size. A log transformation was used after the original linear
-model's diagonistic plots showed heteroscedasticity, with larger
-counties having much higher variation. After applying this
-transformation, the diagonistics were checked and showed no major
-concerns. To identify outliers, studentized residuals were tested
-against a Boferroni-corrected threshold, which produced three outliers:
-gryficki (4.45), kołobrzeski (4.43), and kamieński (4.09). All 3 of
-these counties are found in the zachodniopomorskie province as well as
-being coastal towns, suggesting inflated voter counts reflect
-holidaymakers voting there rather than at home.
+To identify outliers, studentized residuals were tested against a
+Bonferroni-corrected threshold, which produced three outliers: gryficki
+(4.45), kołobrzeski (4.43), and kamieński (4.09). All 3 of these
+counties are found in the zachodniopomorskie province as well as being
+coastal towns, suggesting inflated voter counts reflect holidaymakers
+voting there rather than at home.
 
 ## 2. Exit Poll
 
 ```{r}
 p <- sum(polpres$T2) / (sum(polpres$T2) + sum(polpres$N2)) 
-prob <- 1 - pbinom(500, 1000, p) 
-print(p) 
-print(prob)
 ```
 
-Trzaskowski's national vote share (excluding spoilt ballots) is
-`r round(p, 3)`. If we suppose 1000 randomly selected voters were
-surveyed, the probability that a majority favour Trzaskowski is
-`r round(prob, 3).` This figure seems likely and unsurprising given his
-true share of just under 50%.
+Spoilt votes were excluded as these are unlikely to represent voters who
+truthfully revealed their choice, and we cannot make any conclusions yet
+about where these votes would have ended up.
+
+Modelling the survey as 1000 independent draws from the voting
+population, each voter's choice follows a Bernoulli trial, giving a
+Binomial(1000, p) model where p is Trzaskowski's national vote share
+(excluding spoilt ballots). This assumes each of the 1000 voters is
+drawn independently and uniformly at random from the national voting
+population, and that each voter truthfully reveals their choice with a
+constant probability p across the sample. In practice, exit polls often
+use clustered sampling, which may violate the independence assumption,
+but for this simplified model the binomial is appropriate. The
+proportion of votes for 'Trzaskowski' across the second round of voting
+was found to be 0.49, only marginally smaller than that of the eventual
+winner 'Nawrocki'.
+
+```{r}
+prob <- 1 - pbinom(500, 1000, p) 
+```
+
+Using the binomial model, if we suppose 1000 randomly selected voters
+were surveyed, the probability that a majority favour Trzaskowski is
+0.28. This means there is roughly a 1 in 4 chance a random sample of
+1000 voters would show a Trzaskowski majority, which is plausible given
+his true share sits just below 50%. This means that the exit poll result
+wasn't unlikely - it could easily happen by chance even when the true
+share is below 50%.
 
 ## 3. Turnout
 
 ```{r}
 pp <- polpres[!is.na(polpres$province) & polpres$province != "", ]
 pp$turnout <- (pp$N2 + pp$T2 + pp$spoilt) / pp$eligible2 * 100
+```
 
+'Zagranica' and 'statki' were excluded here as they do not represent
+voting in Poland. To find the turnout figures for round 2, I calculated
+(N2 + T2 + spoilt) / eligible2 × 100 for each county, which gives a
+standardised measure of each county's voting proportion.
+
+```{r}
 lmod3 <- lm(turnout ~ province, data = pp)
+plot(lmod3)
+summary(lmod3)
 anova(lmod3)
+```
 
+County-level turnout varies within each province, so we treat it as a
+random variable and use one-way ANOVA to test whether average turnout
+differs across provinces. Diagnostic plots were checked and the
+residual-fitted and residuals-leverage plots showed no concerns. The Q-Q
+plot showed minor departure from normality in the lower tail, but the
+F-test is known to be robust to moderate departures from normality when
+group sizes are not too small. The ANOVA showed highly significant
+differences in turnout between provinces (F(15, 364) =
+`` `r round(anova(lmod3)$"F value"[1], 2)` ``, p \< 0.001).
+
+```{r}
 ggplot(pp, aes(x = reorder(province, turnout, FUN = median), y = turnout)) +
   geom_boxplot() +
   coord_flip() +
   xlab("Province") +
   ylab("Turnout (%)")
-  
-prov_means <- aggregate(turnout ~ province, data = pp, FUN = mean)
-prov_means[order(prov_means$turnout), ]
-
-# do not include these - just doing for couresework?
-par(mfrow=c(2,2)); plot(lmod3)
-# do not include these - just doing for the coureswork?
 ```
 
-Zagranica and statki were excluded as the question specifies only those
-voting in Poland. I computed round 2 turnout with (N2 + T2 + spoilt) /
-eligible2 x 100 per county. Diagnostics plots were checked and showed no
-concerns and validated one-way ANOVA assumptions. The ANOVA showed
-significant differences between provinces (F = 14.38, p \< 0.001).
-Opolskie (`r round(...)`%) and warmińsko-mazurskie (`r round(...)`%) had
-exceptionally low turnout, while there were no clear exceptionally high
-turnout provinces. This was supported by the sorted boxplot, which shows
-clear separation at the lower end.
+The F-test conclusion is supported by the boxplot, which shows a mixed
+spread of province turnouts and a high degree of within-province
+variabilty. 'Opolskie' and 'warmińsko-mazurskie' clearly separate at the
+lower end while the remaining provinces form a more gradual rise in
+turnout. At the upper end, no province appears exceptionally high or
+distinct from the general trend, with 'mazowieckie' having the highest
+turnout percentage, a likely ranking given it contains 'Warsaw', the
+county with the highest official turnout seen in the dataset.
 
 ## 4. Spoilt Ballots
 
 ```{r}
-pp <- polpres
-pp <- pp[pp$county != "statki", ]
+pp <- polpres[polpres$province != "", ]
 pp$round1 <- rowSums(pp[, candidates])
 pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
 pp$spoilt_rate <- pp$spoilt / pp$round2
-pp$T_share <- pp$Trzaskowski / pp$round1
-lmod4 <- lm(spoilt_rate ~ T_share, data = pp)
-summary(lmod4)
 
-par(mfrow = c(2, 2))
-plot(lmod4)
+pp$left_share <- (pp$Biejat + pp$Zandberg) / pp$round1
+pp$right_share <- (pp$Braun + pp$Mentzen + pp$Nawrocki) / pp$round1
+pp$centre_share <- (pp$Hołownia + pp$Trzaskowski) / pp$round1
+
+ggplot(pp, aes(left_share, spoilt_rate)) + geom_point() + 
+  geom_smooth() + xlab("Left-wing vote share") + ylab("Spoilt rate")
+
+ggplot(pp, aes(right_share, spoilt_rate)) + geom_point() + 
+  geom_smooth() + xlab("Right-wing vote share") + ylab("Spoilt rate")
+
+ggplot(pp, aes(centre_share, spoilt_rate)) + geom_point() + 
+  geom_smooth() + xlab("Centre vote share") + ylab("Spoilt rate")
+
+lmod_left <- lm(spoilt_rate ~ left_share, pp)
+lmod_right <- lm(spoilt_rate ~ right_share, pp)
+lmod_centre <- lm(spoilt_rate ~ centre_share, pp)
 ```
 
 After checking initial diagnostic plots, statki was excluded due to its
@@ -198,9 +254,18 @@ voters were more likely to be potential Trzaskowski supporters.
 pp <- polpres[!is.na(polpres$province) & polpres$province != "", ]
 
 prov <- aggregate(cbind(T2, N2, eligible2) ~ province, data = pp, FUN= sum) 
-prov$winner <- ifelse(prov$T2 >
-prov$N2, "Trzaskowski", "Nawrocki")
+prov$winner <- ifelse(prov$T2 > prov$N2, "Trzaskowski", "Nawrocki")
 prov$ec_votes <- prov$eligible2
+```
+
+Given this question concerns provinces, 'Zagranica' and 'statki' were
+excluded as they are not true polish counties and thus do not fall into
+any given province. For each province, we calculate the winning
+candidate who claims all electoral votes for that region. We represent
+each province's electors by their number of eligible voters, mimicking
+the traditional, proportional representation assigned to states.
+
+```{r}
 prov$margin <- abs(prov$T2 - prov$N2) 
 
 ec_T <- sum(prov$ec_votes[prov$winner == "Trzaskowski"]) 
@@ -226,24 +291,44 @@ for (k in 1:nrow(ec_winner_provs)) {
     }
   }
 }
+```
 
+Trzaskowski would in fact have won the 2025 Polish election, had the
+electoral college system been used. This is a direct contradiction of
+Nawrocki being the actual winner, highlighting the influence of
+electoral systems and how their mechanisms can bring about vastly
+different outcomes when it comes to determining presidency.
+
+Under the revised election system, only 20,333 voter changes would be
+needed to reverse the election outcome. Despite the high vote margin
+between candidates, narrow margins in large provinces can be flipped
+very cheaply, swinging enormous electoral college weight and reversing
+the election result for minimal voting cost.
+
+```{r}
 national_T <- sum(polpres$T2)
 national_N <- sum(polpres$N2) 
 national_margin <- abs(national_T - national_N) 
 national_flips <- floor(national_margin / 2) + 1
 ```
 
-Trzaskowski would win the election under EC rules (19.2M v 9.4M
-electoral votes), despite losing to Nawrocki under the actual Polish
-voting system. However, only 20,333 voter changes would be needed to
-flip the electoral college outcome, compared to 184,796 changes for the
-actual Polish result. This shows that the electoral system is much more
-sensitive to small vote changes, with almost 100 times fewer switches
-needed when comparing the two systems.
+The minimum flip cost is found by searching all subsets of the winner's
+provinces for the cheapest combination whose electoral college swing
+exceeds the winner's lead.
+
+The actual number of votes needed to alter the outcome of the election
+under the Polish electoral system is 184,796, which represents the raw
+difference in candidate votes between the two options of round 2.
+Clearly, this number is almost 10 times larger than that of the
+electoral college system. This is due to the electoral system's
+sensitivity to small vote changes and marginal shifts in regions shaping
+national outcomes. This contrasts Poland's direct popular vote system,
+which reflects overall opinions and voting changes more proportionally.
 
 ## 6. Transfer of first round votes
 
-```{pp <- polpres}
+```{r}
+pp <- polpres
 pp$round1 <- rowSums(pp[, candidates])
 pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
 pp$others <- pp$Bartoszewicz + pp$Jakubiak + pp$Maciak + 
