@@ -78,8 +78,8 @@ pp <- polpres[polpres$province != "", ]
 
 From initial dataset analysis, the two counties 'zagranica' and 'statki'
 have no listed province. From exploring this further, these both
-translate to 'foreign countries' and 'ships'. In light of this, I have
-excluded these two from the dataset for this question as the focus on
+translate to 'foreign countries' and 'ships'. In light of this, these
+two were excluded from the dataset for this question as the focus on
 counties implies this is a reasonable adjustment to make. Additional
 voters were calculated by taking the difference of voters across all 13
 candidates, and the number of spoilt, 'Nawrocki' and 'Trzaskowski' votes
@@ -102,28 +102,28 @@ disproportionately influences the model fit.
 
 ```{r}
 lmod_after <- lm(log(additional) ~ log(round1), data = pp)
-summary(lmod_after)
+plot(lmod_after, 1)
+
 ```
 
-A log transformation to both 'additional' and 'round1' voters before
-fitting a linear model, as it gives more interpretable coefficients when
-compared to sqrt. Inspecting this models diagnostics plots, no major
-concerns were seen and thus a linear model appears to be a good fit. The
-model achieves an R\^2 of 0.8276, with log(round1) a statistically
-significant predictor with an estimated coefficient of 0.89; implying
-that additional voters scales approximately proportionally with county
-size.
+A log-log transformation was applied to both variables. This stabilises
+the variance and produces interpretable model coefficients. Inspecting
+the models diagnostics plots, no major concerns were seen and thus a
+linear model appears to be a good fit. The model achieves an R\^2 of
+0.8276, with log(round1) a statistically significant predictor with an
+estimated coefficient of 0.89; implying that additional voters scales
+approximately proportionally with county size.
 
 ```{r}
 stud <- rstudent(lmod_after) 
 pp$stud <- stud
 
 n <- nrow(pp) 
-threshold <- qt(0.05 / (2 * n), df = n - 1 - 1)
+threshold <- qt(0.05 / (2 * n), df = n - 2 - 1)
 pp$outlier <- abs(pp$stud) > abs(threshold)
 
 ggplot(pp, aes(log(round1), log(additional))) + geom_point() +
-geom_smooth() + geom_text(data = pp[pp$outlier, ], # method = lm in here???
+geom_smooth(method = "lm") + geom_text(data = pp[pp$outlier, ], 
 aes(label = county), hjust = -0.1, size = 3) + xlab("Log first round total votes") + ylab("Log additional voters in second round")
 ```
 
@@ -192,9 +192,9 @@ County-level turnout varies within each province, so we treat it as a
 random variable and use one-way ANOVA to test whether average turnout
 differs across provinces. Diagnostic plots were checked and the
 residual-fitted and residuals-leverage plots showed no concerns. The Q-Q
-plot showed minor departure from normality in the lower tail, but the
-F-test is known to be robust to moderate departures from normality when
-group sizes are not too small. The ANOVA showed highly significant
+plot showed minor departure from normality in the lower tail, but with
+approximately 24 counties per province the Central Limit Theorem ensures
+the F-test remains reliable. The ANOVA showed highly significant
 differences in turnout between provinces (F(15, 364) =
 `` `r round(anova(lmod3)$"F value"[1], 2)` ``, p \< 0.001).
 
@@ -208,45 +208,83 @@ ggplot(pp, aes(x = reorder(province, turnout, FUN = median), y = turnout)) +
 
 The F-test conclusion is supported by the boxplot, which shows a mixed
 spread of province turnouts and a high degree of within-province
-variabilty. 'Opolskie' and 'warmińsko-mazurskie' clearly separate at the
-lower end while the remaining provinces form a more gradual rise in
-turnout. At the upper end, no province appears exceptionally high or
-distinct from the general trend, with 'mazowieckie' having the highest
-turnout percentage, a likely ranking given it contains 'Warsaw', the
-county with the highest official turnout seen in the dataset.
+variability, especially for 'mazowieckie' and 'pomorskie'. 'Opolskie'
+and 'warmińsko-mazurskie' clearly separate at the lower end while the
+remaining provinces form a more gradual rise in turnout. At the upper
+end, no province appears exceptionally high or distinct from the general
+trend, with 'mazowieckie' having the highest turnout percentage, a
+likely ranking given it contains 'Warsaw', the county with the highest
+official turnout seen in the dataset.
 
 ## 4. Spoilt Ballots
 
 ```{r}
-pp <- polpres[polpres$province != "", ]
-pp$round1 <- rowSums(pp[, candidates])
-pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
+pp$T_share <- pp$Trzaskowski / pp$round1
 pp$spoilt_rate <- pp$spoilt / pp$round2
 
+ggplot(pp, aes(T_share, spoilt_rate)) + geom_point() + 
+  geom_smooth(method = "lm") + 
+  xlab("Trzaskowski first-round vote share") + ylab("Spoilt rate")
+
+lmod4 <- lm(spoilt_rate ~ T_share, data = pp)
+plot(lmod4)
+summary(lmod4)
+```
+
+Spoilt rate was modelled against Trzaskowski's first-round vote share.
+No outlier values were removed as cook's distance was examined and no
+observations exceeded the conventional 0.5 threshold. The model summary
+shows a significant positive coefficient (`r round(coef(lmod4)[2], 4)`,
+p \< 0.001), meaning counties with stronger first-round Trzaskowski
+support had higher spoilt rates. This suggests spoilt ballots were more
+common in areas with centre-left support. The R² of
+`r round(summary(lmod4)$r.squared, 3)` is modest, but the significant
+coefficient is sufficient to identify the direction of the political
+association.
+
+```{r}
 pp$left_share <- (pp$Biejat + pp$Zandberg) / pp$round1
 pp$right_share <- (pp$Braun + pp$Mentzen + pp$Nawrocki) / pp$round1
 pp$centre_share <- (pp$Hołownia + pp$Trzaskowski) / pp$round1
 
-ggplot(pp, aes(left_share, spoilt_rate)) + geom_point() + 
-  geom_smooth() + xlab("Left-wing vote share") + ylab("Spoilt rate")
-
-ggplot(pp, aes(right_share, spoilt_rate)) + geom_point() + 
-  geom_smooth() + xlab("Right-wing vote share") + ylab("Spoilt rate")
-
-ggplot(pp, aes(centre_share, spoilt_rate)) + geom_point() + 
-  geom_smooth() + xlab("Centre vote share") + ylab("Spoilt rate")
-
-lmod_left <- lm(spoilt_rate ~ left_share, pp)
-lmod_right <- lm(spoilt_rate ~ right_share, pp)
-lmod_centre <- lm(spoilt_rate ~ centre_share, pp)
+cor(pp[, c("left_share", "right_share", "centre_share")])
 ```
 
-After checking initial diagnostic plots, statki was excluded due to its
-clear outlier behavior. Spoilt rate was modelled against Trzaskowski's
-first-round vote share. From the model summary we see a significant
-positive coefficient, meaning that counties with stronger first-round
-Trzaskowski support had higher spoilt rates. This suggests spoilt ballot
-voters were more likely to be potential Trzaskowski supporters.
+Spoilt rate was calculated as the proportion of spoilt ballots in the
+second round total. To investigate the political views of spoilt ballot
+voters, first-round vote shares were computed for left-wing (Biejat,
+Zandberg), right-wing (Braun, Mentzen, Nawrocki) and centre (Hołownia,
+Trzaskowski) blocs. The remaining minor candidates were excluded from
+the classification as they are difficult to classify politically without
+detailed, contextual knowledge of their viewpoints.
+
+The correlation matrix between these three shares shows near-perfect
+collinearity (right-centre correlation of -0.99), so fitting a model
+with all three as predictors would produce unreliable coefficients. This
+is especially important given the interpretation-nature of this task.
+
+```{r}
+pp_long <- data.frame(
+  spoilt_rate = rep(pp$spoilt_rate, 3),
+  share = c(pp$left_share, pp$right_share, pp$centre_share),
+  bloc = rep(c("Left", "Right", "Centre"), each = nrow(pp))
+)
+
+ggplot(pp_long, aes(share, spoilt_rate, color = bloc)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = "lm") + 
+  xlab("Vote share") + ylab("Spoilt rate")
+```
+
+The fitted line plot confirms a clear positive trend. This is consistent
+with the concern that more spoilt ballot voters intended to vote for
+Trzaskowski. The broader political pattern is illustrated by overlaying
+fitted lines for left, right, and centre vote shares against spoilt
+rate; left and centre shares show a positive association while
+right-wing share shows a negative one. This suggests spoilt ballot
+voters came from areas with centre-left political leanings, though as
+this is county-level data we cannot be certain about the intentions of
+individual voters, a clear example of the ecological fallacy.
 
 ## 5. USA-style election
 
@@ -294,13 +332,18 @@ for (k in 1:nrow(ec_winner_provs)) {
 ```
 
 Trzaskowski would in fact have won the 2025 Polish election, had the
-electoral college system been used. This is a direct contradiction of
+electoral college system been used. This is a direct reversal of
 Nawrocki being the actual winner, highlighting the influence of
 electoral systems and how their mechanisms can bring about vastly
 different outcomes when it comes to determining presidency.
 
+The minimum flip cost is found by searching all subsets of the winner's
+provinces for the cheapest combination whose electoral college swing
+exceeds the winner's lead.
+
 Under the revised election system, only 20,333 voter changes would be
-needed to reverse the election outcome. Despite the high vote margin
+needed to reverse the election outcome, across two provinces
+'mazowieckie' and 'warmińsko-mazurskie'. Despite the high vote margin
 between candidates, narrow margins in large provinces can be flipped
 very cheaply, swinging enormous electoral college weight and reversing
 the election result for minimal voting cost.
@@ -311,10 +354,6 @@ national_N <- sum(polpres$N2)
 national_margin <- abs(national_T - national_N) 
 national_flips <- floor(national_margin / 2) + 1
 ```
-
-The minimum flip cost is found by searching all subsets of the winner's
-provinces for the cheapest combination whose electoral college swing
-exceeds the winner's lead.
 
 The actual number of votes needed to alter the outcome of the election
 under the Polish electoral system is 184,796, which represents the raw
@@ -331,11 +370,66 @@ which reflects overall opinions and voting changes more proportionally.
 pp <- polpres
 pp$round1 <- rowSums(pp[, candidates])
 pp$round2 <- pp$N2 + pp$T2 + pp$spoilt
-pp$others <- pp$Bartoszewicz + pp$Jakubiak + pp$Maciak + 
-             pp$Senyszyn + pp$Stanowski + pp$Woch
+pp$others <- pp$Bartoszewicz + pp$Jakubiak + pp$Maciak + pp$Senyszyn + pp$Stanowski + pp$Woch
 pp$latejoins <- pp$round2 - pp$round1
-
-lmod6 <- lm(T2 ~ Biejat + Zandberg + Hołownia + Braun + Mentzen + 
-             Trzaskowski + Nawrocki + others + latejoins - 1, data = pp)
-summary(lmod6)
+lmod6 <- lm(T2 ~ Trzaskowski + Nawrocki + Biejat + Zandberg + Hołownia + Braun + Mentzen + others + latejoins - 1, data = pp)
 ```
+
+Every second-round voter either supported a first-round candidate or
+joined late, so the predictors account for all round 2 voters. The
+intercept is removed since zero first-round voters should produce zero
+second-round votes. To account for the stability of the finalists' voter
+bases, their first-round totals were included as baseline controls. This
+allows the model to better isolate how the losing candidates' voters
+redistributed their support.
+
+```{r}
+plot(lmod6)
+```
+
+Diagnostic plots were checked. The residual-fitted plot shows variance
+increasing with fitted values, which is expected for count data where
+larger counties produce larger residuals. The Q-Q plot shows heavy tails
+with observations 179 and 181 particularly extreme, as well as both
+points having high leverage. Refitting the model without these
+observations changed the magnitude of some coefficients but the overall
+pattern of transfers remained the same, so both were retained. Since the
+goal is to interpret coefficients as transfer proportions, a
+transformation of the response would not be appropriate as the
+coefficients would no longer have this interpretation.
+
+```{r}
+coefs <- round(coef(lmod6), 3)
+transfer <- data.frame(
+  Group = c("Biejat", "Zandberg", "Hołownia", "Braun", "Mentzen", "Late joiners"),
+  Trzaskowski = coefs[c("Biejat","Zandberg","Hołownia","Braun","Mentzen","latejoins")],
+  Nawrocki = round(1 - coefs[c("Biejat","Zandberg","Hołownia","Braun","Mentzen","latejoins")], 3)
+)
+transfer
+
+coef(lm(T2 ~ Trzaskowski + Nawrocki + Biejat + Zandberg + Hołownia + Braun + Mentzen + others + latejoins - 1, data = pp[-181,]))[c("Biejat","Zandberg","Hołownia","Braun","Mentzen","latejoins")]
+```
+
+Each coefficient estimates the proportion of that group transferring to
+Trzaskowski, with approximately (1 − coefficient) going to Nawrocki. As
+spoilt ballots are a small fraction of the round 2 total votes, they are
+absorbed into these proportions and have little effect on the overall
+conclusions.
+
+This is an ecological regression, with individual transfer behaviour
+inferred from aggregate county-level data. The linear model does not
+constrain coefficients to [0, 1], and the predictors sum to round 2
+totals for each county, introducing near-collinearity. These model
+constraints cause the Trzaskowski, Nawrocki, and Zandberg coefficients
+to fall outside [0, 1]. Trzaskowski and Nawrocki are control variables,
+not quantities of interest, and Zandberg's value (1.045) is close enough
+to 1 to interpret as an approximately complete transfer. The four
+remaining eliminated candidates and late joiners remain interpretable.
+
+The overall pattern is clear: Biejat and Zandberg (left-wing) voters
+transferred heavily to Trzaskowski, Hołownia (centrist) voters leaned
+towards Trzaskowski, Braun and Mentzen (right-wing) voters went
+predominantly to Nawrocki, and late joiners favoured Trzaskowski at
+roughly 75%. These transfers align with political positioning, with
+left-wing and centrist voters supporting the more liberal Trzaskowski
+while right-wing voters backing the conservative Nawrocki.
