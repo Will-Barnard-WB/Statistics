@@ -407,7 +407,8 @@ transfer <- data.frame(
 )
 transfer
 
-coef(lm(T2 ~ Trzaskowski + Nawrocki + Biejat + Zandberg + Hołownia + Braun + Mentzen + others + latejoins - 1, data = pp[-181,]))[c("Biejat","Zandberg","Hołownia","Braun","Mentzen","latejoins")]
+coef(lm(T2 ~ Trzaskowski + Nawrocki + Biejat + Zandberg + Hołownia + Braun + Mentzen + others + latejoins - 1, 
+        data = pp[-c(179, 181), ]))[c("Biejat", "Zandberg", "Hołownia", "Braun", "Mentzen", "latejoins")]
 ```
 
 Each coefficient estimates the proportion of that group transferring to
